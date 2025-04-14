@@ -1,92 +1,119 @@
-# CV-Chess
-This repository contains the implementation of a computer vision project focused on building a complete system to analyze and detect chess piece positions.
+# Chess Piece Detection
 
+This repository contains the implementation of a computer vision project focused on chess board analysis and piece presence detection. The project uses classical computer vision techniques without relying on deep learning models.
 
-## Objective
-1. Detect board corners / squares
-2. Detect and classify chess pieces on a real-world chessboard image.
+## Project Objective
 
+The main goals of this project are:
+1. Detect the chess board and its corners in images taken from various angles
+2. Identify the presence of chess pieces on the board
+3. Generate a standardized output showing the board state as an 8×8 matrix and piece locations
 
-## Pipeline Overview
-### 1. Chess Piece Detection and Classification
-- Uses OpenCV-based image processing techniques to detect the board and individual squares.
-- Identifies pieces using template matching and classical methods.
+## Implementation Overview
 
-### 2. Board Reconstruction
-- Converts the layout of the board into 2d.
-- Sorts pieces into their corresponding squares.
-- Handles board orientation and alignment.
+### Chess Detection Pipeline
 
+The system follows a sequential processing pipeline:
 
-## Dataset
-- Input images of real-world chessboards.
-- 50 images.
-- Different illuminations.
-- Different view angles.
+1. **Board Detection**: Identifies the chess board using edge detection, line extraction, and geometric filtering
+2. **Square Extraction**: Divides the board into 64 equal squares with proper chess notation (a1-h8)
+3. **Corner Identification**: Locates the four corners of the board using convex hull and angle-based methods
+4. **Perspective Transformation**: Warps the image to obtain a top-down view of the board
+5. **Piece Detection**: Analyzes each square to determine piece presence using image features
+6. **Output Generation**: Creates a standardized JSON output with piece counts and positions
 
+## Usage
+
+### Input Format
+
+The system takes a JSON file as input specifying image paths:
+
+```json
+{
+  "image_files": [
+    "images/G000_IMG062.jpg",
+    "images/G000_IMG087.jpg",
+    "images/G033_IMG043.jpg"
+  ]
+}
+```
+
+### Running the Detection
+
+```bash
+python ChessDetection.py
+```
+
+This processes all images listed in `input.json` and generates:
+1. Visualization outputs in the `processed_boards` folder
+2. Detection results in `output.json`
+
+### Output Format
+
+The program generates an `output.json` file with the following structure:
+
+```json
+[
+  {
+    "image": "images/G000_IMG062.jpg",
+    "num_pieces": 32,
+    "board": [
+      [1, 1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1],
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [1, 1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1]
+    ],
+    "detected_pieces": [
+      {
+        "xmin": 100,
+        "ymin": 200,
+        "xmax": 150,
+        "ymax": 250
+      },
+      // More pieces...
+    ]
+  },
+  // More images...
+]
+```
+
+Where:
+- `image`: Path to the processed image
+- `num_pieces`: Total number of pieces detected
+- `board`: 8×8 matrix where 1 indicates piece presence, 0 indicates empty square
+- `detected_pieces`: List of bounding boxes for each detected piece
+
+## Key Technical Features
+
+- **Hand-tuned Canny Edge Detection**: Uses unconventional thresholds (250/180) for optimal chess grid extraction
+- **Optimized HoughLinesP**: Parameters (threshold=730, minLineLength=225, maxLineGap=110) specifically calibrated for chess boards
+- **Geometric Square Filtering**: Uses precise constraints on aspect ratio, diagonal ratio, and size to identify valid chess squares
+- **Feature-based Piece Detection**: Combines brightness variation and edge density to reliably detect pieces regardless of color
 
 ## Project Structure
 
 ```
 .
-├── src/
-│   ├── board_detection.py        # Detects the board and squares using OpenCV
-│   ├── piece_identifier.py       # Identifies pieces using templates
-│   ├── fen_generator.py          # Converts board state into FEN notation
-│   └── move_predictor.py         # Predicts best move from a given FEN
-│
-├── data/
-│   ├── images/                   # Sample input images
-│   └── templates/                # Template images for each piece
-│
-├── notebooks/
-│   ├── detection_pipeline.ipynb  # Interactive notebook for piece detection
-│   └── move_prediction.ipynb     # Notebook for evaluating move prediction
-│
-├── models/                       # Trained policy models
-├── inference_pipeline.py         # Complete pipeline: image → FEN → move prediction
-├── requirements.txt              # Environment dependencies
-└── README.md                     # This file
+├── ChessDetection.py      # Main detection script
+├── input.json             # Input file listing images to process
+├── images/                # Directory containing chess board images
+├── processed_boards/      # Output directory for visualizations
+└── output.json            # Detection results in JSON format
 ```
 
-
-## Evaluation
-- Accuracy of board state reconstruction (visually inspected).
-- Accuracy of piece positions (visually inspected).
-
-
-## How to Use
-### 1. Install requirements:
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Run detection on a new image:
-```bash
-python inference_pipeline.py --image path_to_chess_image.jpg
-```
-
-### 3. Output will include:
-- Detected board layout
-- Detected occupancy grid
-- Detected piece positions
-- Json format
-
-
-## Notes
-- Board detection uses line detection and contour approximation.
-- Occupancy grid is used for piece recognition.
-
+## Requirements
+- OpenCV
+- NumPy
+- Matplotlib
 
 ## Authors
-Project developed for the Computer Vision and AI course at FEUP/FCUP 2024/2025.
 
+Project developed for the Computer Vision course at FEUP 2024/2025.
 - Lucas Santiago
 - Daniel Dias
 - Rafael Conceição
 - Nuno Moreira
-
-
-## Future Work
-- Improve robustness to lighting and occlusion.
-- Improve piece occupancy detection.

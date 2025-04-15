@@ -6,7 +6,7 @@ import math
 import os
 
 # Create output directory
-output_dir = "processed_boards"
+output_dir = "processed_boards"          # to be removed after
 os.makedirs(output_dir, exist_ok=True)
 
 # Load image filenames from JSON file
@@ -40,14 +40,14 @@ for idx, (image, filename) in enumerate(images):
     blurred = cv2.GaussianBlur(gray_image, (7, 7), 1.5)
 
     # Edge detection with Canny
-    canny_image = cv2.Canny(blurred, 250, 180)
+    canny_image = cv2.Canny(blurred, 250, 180)      #low threshold of 250 and high of 180 - handpicked for the exact problem
 
     # Dilation to connect nearby edges
-    kernel = np.ones((9, 9), np.uint8)
+    kernel = np.ones((9, 9), np.uint8)      #using 9x9 kernel
     dilation_image = cv2.dilate(canny_image, kernel, iterations=1)
 
     # Hough Lines with adjusted parameters
-    lines = cv2.HoughLinesP(dilation_image, 1, np.pi / 180, threshold=730, minLineLength=225, maxLineGap=110)
+    lines = cv2.HoughLinesP(dilation_image, 1, np.pi / 180, threshold=730, minLineLength=225, maxLineGap=110)       #Handpicked parameters also
 
     # Create an image that contains only black pixels
     black_image = np.zeros_like(dilation_image)
@@ -129,7 +129,7 @@ for idx, (image, filename) in enumerate(images):
         # Calculate image size for reference
         img_area = image.shape[0] * image.shape[1]
 
-        # Fine-tuned parameters specifically for chess squares
+        # Fine-tuned parameters specifically for chess squares (it tries to detect mainly the 8x8 chess squares)
         min_square_area = 0.0007 * img_area
         max_square_area = 0.007 * img_area
 
@@ -190,7 +190,7 @@ for idx, (image, filename) in enumerate(images):
                     # Calculate diagonal ratio
                     diagonal_ratio = max(d1, d2) / min(d1, d2) if min(d1, d2) > 0 else float('inf')
                     
-                    # Fine-tuned thresholds for chess squares
+                    # Fine-tuned thresholds for chess squares - Handpicked parameters to find all the possible squares in the grid
                     is_square = (
                         aspect_ratio < 2.7 and
                         diagonal_ratio < 2.7 and
@@ -229,8 +229,8 @@ for idx, (image, filename) in enumerate(images):
             # Apply the convex hull mask to get the final isolated chessboard
             filled_chessboard = cv2.bitwise_and(dilated_valid_squares_image, dilated_valid_squares_image, mask=hull_mask)
             
-            # Update the chessboard mask and isolated image
-            chessboard_mask = hull_mask
+            # Update the chessboard mask and isolated image - chessboard_mask is now a rectangle filled with white so its easier to find
+            chessboard_mask = hull_mask            
             dilated_valid_squares_image = filled_chessboard
         else:
             print(f"No contours found in the chessboard mask for {filename}")
@@ -391,13 +391,12 @@ for idx, (image, filename) in enumerate(images):
             for i, corner in enumerate(corners):
                 print(f"Corner {i}: ({int(corner[0])}, {int(corner[1])}) - {filename}")
                 
-            # Define the four source points (use the corners we detected)
             # Make sure these are ordered correctly: [top_left, top_right, bottom_left, bottom_right]
             top_left = []
             top_right = []
             bottom_left = []
             bottom_right = []
-
+            #assign every corner to the respective one
             for i, corner in enumerate(corners):
                 if i == 0:
                     x, y = int(corner[0]), int(corner[1])
@@ -494,7 +493,7 @@ for idx, (image, filename) in enumerate(images):
                 cv2.putText(square_centers_image, label, (center[0] - 20, center[1] + 5),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-            # Save the square centers image
+            # Save the square centers image - for
             plt.figure(figsize=(12, 10))
             plt.imshow(cv2.cvtColor(square_centers_image, cv2.COLOR_BGR2RGB))
             plt.title("Chessboard with Square Centers and Coordinates")
@@ -535,109 +534,155 @@ for idx, (image, filename) in enumerate(images):
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
             # Simplified Chess Piece Detection - Only Detecting Piece Presence
-            def detect_pieces_presence_only(rgb_image, squares_data):
-                """
-                Detect only if a piece is present, without distinguishing colors
-                
-                Args:
-                    rgb_image: Original RGB image
-                    squares_data: List of dictionaries containing square information
-                    
-                Returns:
-                    Dictionary with piece information and visualization
-                """
-                # Create a visualization copy of the original image
-                visualization = rgb_image.copy()
-                
-                # Convert to grayscale for simpler processing
-                gray_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2GRAY)
-                
-                # Initialize counters and storage
-                pieces = []
-                board_matrix = [[0 for _ in range(8)] for _ in range(8)]
-                
-                # Process each square individually
+            def detect_pieces_on_warped_image_rgb_validated(warped_image, squares_data):
+                visualization = warped_image.copy()
+                gray_image = cv2.cvtColor(warped_image, cv2.COLOR_BGR2GRAY)
+
+                roi_size = 35
+                initial_board_matrix = [[0 for _ in range(8)] for _ in range(8)]
+                empty_light_rgbs = []
+                empty_dark_rgbs = []
+                detected_pieces = []  # List to store detected piece bounding boxes
+
+                # === Stage 1: Traditional heuristic ===
                 for square in squares_data:
-                    # Get the original center of the square
-                    center = square["original_center"]
-                    
-                    # Get square coordinates
+                    center = square["center"]
                     file = square["file"]
                     rank = square["rank"]
-                    file_idx = ord(file) - ord('a')  # 0-7
-                    rank_idx = 8 - rank  # 0-7 (8 is at the top in chess notation)
-                    
-                    # Determine if square is dark or light on the chessboard
+                    file_idx = ord(file) - ord('a')
+                    rank_idx = 8 - rank
                     is_dark_square = (file_idx + rank_idx) % 2 == 1
-                    
-                    # Define a region around the center to analyze
-                    roi_size = 40  # Larger ROI to capture more of the piece
+
                     roi_x = max(0, center[0] - roi_size)
                     roi_y = max(0, center[1] - roi_size)
-                    roi_width = min(roi_size*2, rgb_image.shape[1] - roi_x)
-                    roi_height = min(roi_size*2, rgb_image.shape[0] - roi_y)
-                    
-                    # Extract the region of interest
-                    roi_gray = gray_image[roi_y:roi_y+roi_height, roi_x:roi_x+roi_width]
-                    
+                    roi_width = min(roi_size * 2, warped_image.shape[1] - roi_x)
+                    roi_height = min(roi_size * 2, warped_image.shape[0] - roi_y)
+
+                    roi_gray = gray_image[roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
                     if roi_gray.size == 0:
-                        continue  # Skip if ROI is outside the image
-                    
-                    # FEATURE 1: Standard deviation of brightness (pieces create shadows and highlights)
+                        continue
+
                     std_dev = np.std(roi_gray)
-                    
-                    # FEATURE 2: Edge density (pieces have more edges)
-                    edges = cv2.Canny(roi_gray, 50, 150)
-                    edge_pixels = np.count_nonzero(edges)
-                    edge_density = edge_pixels / roi_gray.size
-                    
-                    # Calculate a simple "piece presence score"
-                    piece_score = std_dev + (edge_density * 500)
-                    
-                    # Threshold for piece detection - adjust as needed
-                    # Higher on dark squares since they naturally have more contrast
-                    piece_threshold = 25 if is_dark_square else 20
-                    
-                    # Determine if there's a piece
-                    has_piece = piece_score > piece_threshold
-                    
-                    if has_piece:
-                        # Create bounding box
-                        bbox = {
-                            "xmin": roi_x,
-                            "ymin": roi_y,
-                            "xmax": roi_x + roi_width,
-                            "ymax": roi_y + roi_height
-                        }
-                        
-                        # Draw on visualization - single color for all pieces
-                        cv2.rectangle(visualization, (roi_x, roi_y), (roi_x+roi_width, roi_y+roi_height), (0, 255, 255), 2)
-                        
-                        # Add position label
-                        cv2.putText(visualization, f"{file}{rank}", (center[0]-15, center[1]), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                        
-                        # Update the board matrix (1 indicates piece present)
-                        board_matrix[rank_idx][file_idx] = 1
-                        
-                        # Add to detected pieces
-                        image_results["detected_pieces"].append(bbox)
-                
-                # Update board matrix in results
+                    edges = cv2.Canny(roi_gray, 35, 150)
+                    edge_density = np.count_nonzero(edges) / roi_gray.size
+
+                    if std_dev > 15 or edge_density > 0.07:  # was 18 and 0.08
+                        initial_board_matrix[rank_idx][file_idx] = 1  # mark as piece
+
+                # === Stage 2: Average RGB of empty squares ===
+                for square in squares_data:
+                    center = square["center"]
+                    file = square["file"]
+                    rank = square["rank"]
+                    file_idx = ord(file) - ord('a')
+                    rank_idx = 8 - rank
+                    is_dark_square = (file_idx + rank_idx) % 2 == 1
+
+                    if initial_board_matrix[rank_idx][file_idx] == 1:
+                        continue  # square is occupied
+
+                    roi_x = max(0, center[0] - roi_size)
+                    roi_y = max(0, center[1] - roi_size)
+                    roi_width = min(roi_size * 2, warped_image.shape[1] - roi_x)
+                    roi_height = min(roi_size * 2, warped_image.shape[0] - roi_y)
+                    roi = warped_image[roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
+
+                    if roi.size == 0:
+                        continue
+
+                    mean_rgb = np.mean(roi.reshape(-1, 3), axis=0)
+
+                    if is_dark_square:
+                        empty_dark_rgbs.append(mean_rgb)
+                    else:
+                        empty_light_rgbs.append(mean_rgb)
+
+                mean_rgb_light = np.mean(empty_light_rgbs, axis=0) if empty_light_rgbs else np.array([200, 200, 200])
+                mean_rgb_dark = np.mean(empty_dark_rgbs, axis=0) if empty_dark_rgbs else np.array([80, 80, 80])
+
+                print("Estimated average RGB for empty light squares:", mean_rgb_light)
+                print("Estimated average RGB for empty dark squares:", mean_rgb_dark)
+
+                # === Stage 3: RGB Detection ===
+                threshold_rgb_diff = 30  # sensitivity (was 37)
+                board_matrix = [[0 for _ in range(8)] for _ in range(8)]
+
+                for square in squares_data:
+                    center = square["center"]
+                    file = square["file"]
+                    rank = square["rank"]
+                    file_idx = ord(file) - ord('a')
+                    rank_idx = 8 - rank
+                    is_dark_square = (file_idx + rank_idx) % 2 == 1
+                    expected_rgb = mean_rgb_dark if is_dark_square else mean_rgb_light
+
+                    roi_x = max(0, center[0] - roi_size)
+                    roi_y = max(0, center[1] - roi_size)
+                    roi_width = min(roi_size * 2, warped_image.shape[1] - roi_x)
+                    roi_height = min(roi_size * 2, warped_image.shape[0] - roi_y)
+                    roi = warped_image[roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
+
+                    if roi.size == 0:
+                        continue
+
+                    mean_rgb = np.mean(roi.reshape(-1, 3), axis=0)
+                    diff = np.linalg.norm(mean_rgb - expected_rgb)
+
+                    if diff > threshold_rgb_diff:
+                        # === Stage 4: validation with heuristic ===
+                        roi_gray = gray_image[roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
+                        std_dev = np.std(roi_gray)
+                        edges = cv2.Canny(roi_gray, 30, 130)  # was 35, 150
+                        edge_density = np.count_nonzero(edges) / roi_gray.size
+
+                        std_threshold = 13 if is_dark_square else 9
+                        edge_threshold = 0.045 if is_dark_square else 0.025
+
+                        if std_dev > std_threshold or edge_density > edge_threshold:
+                            # Update board matrix to mark piece presence
+                            board_matrix[rank_idx][file_idx] = 1
+                            
+                            # Get original image coordinates for the square's center
+                            original_center = square["original_center"]
+                            
+                            # Create bounding box around the original center
+                            original_roi_size = 40  # Adjust as needed
+                            original_roi_x = max(0, original_center[0] - original_roi_size)
+                            original_roi_y = max(0, original_center[1] - original_roi_size)
+                            original_roi_width = 2 * original_roi_size
+                            original_roi_height = 2 * original_roi_size
+                            
+                            # Add detected piece to the list
+                            detected_piece = {
+                                "xmin": original_roi_x,
+                                "ymin": original_roi_y,
+                                "xmax": original_roi_x + original_roi_width,
+                                "ymax": original_roi_y + original_roi_height
+                            }
+                            detected_pieces.append(detected_piece)
+                            
+                            # Draw visualization on the warped image
+                            cv2.rectangle(visualization,
+                                        (roi_x, roi_y),
+                                        (roi_x + roi_width, roi_y + roi_height),
+                                        (0, 255, 0), 2)
+                            cv2.putText(visualization, f"{file}{rank}",
+                                        (center[0] - 15, center[1]),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+
+                # Update image_results with board matrix, piece count, and detected pieces
                 image_results["board"] = board_matrix
-                
-                # Count total pieces
-                piece_count = sum(sum(row) for row in board_matrix)
-                image_results["num_pieces"] = piece_count
-                
+                image_results["num_pieces"] = sum(sum(row) for row in board_matrix)
+                image_results["detected_pieces"] = detected_pieces
+
                 return visualization
 
-            # Run piece detection
-            piece_detection_img = detect_pieces_presence_only(image, squares_data)
-            
+
+            # Run piece detection on the warped image instead of original
+            warped_piece_detection_img = detect_pieces_on_warped_image_rgb_validated(warped_image, squares_data)
             # Save the piece detection image
             plt.figure(figsize=(12, 10))
-            plt.imshow(cv2.cvtColor(piece_detection_img, cv2.COLOR_BGR2RGB))
+            plt.imshow(cv2.cvtColor(warped_piece_detection_img, cv2.COLOR_BGR2RGB))
             plt.title("Chess Piece Detection (Presence Only)")
             plt.savefig(os.path.join(output_dir, f"{idx+1}_{os.path.splitext(filename)[0]}_piece_detection.png"))
             plt.close()
@@ -645,8 +690,10 @@ for idx, (image, filename) in enumerate(images):
             # Add results to output list
             output_results.append(image_results)
 
-# Write results to output.json
-with open("output.json", "w") as json_file:
-    json.dump(output_results, json_file, indent=4)
+if __name__ == "__main__":
+    # Write results to output.json
+    with open("output.json", "w") as json_file:
+        json.dump(output_results, json_file, indent=4)
 
-print(f"Processing complete. Results saved to output.json")
+    print(f"Processing complete. Results saved to output.json")
+    print(f"Output visualizations saved to {output_dir}/")
